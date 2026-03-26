@@ -440,6 +440,7 @@
 
       this.resizeQueued = false;
       this.lastTouchEnd = 0;
+      this.supportsPointer = typeof window.PointerEvent !== "undefined";
       this.createStars(this.computeStarCount());
       this.resize();
       this.bindEvents();
@@ -603,28 +604,47 @@
       startBtn.addEventListener("click", () => this.startGame());
       restartBtn.addEventListener("click", () => this.startGame());
 
-      canvas.addEventListener("pointerdown", (e) => this.handlePointerDown(e), { passive: false });
-      canvas.addEventListener("pointermove", (e) => this.handlePointerMove(e), { passive: false });
-      canvas.addEventListener("pointerup", (e) => this.handlePointerEnd(e), { passive: false });
-      canvas.addEventListener("pointercancel", (e) => this.handlePointerEnd(e), { passive: false });
-      canvas.addEventListener("lostpointercapture", (e) => this.handlePointerEnd(e), { passive: false });
+      startBtn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        this.startGame();
+      }, { passive: false });
+
+      restartBtn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        this.startGame();
+      }, { passive: false });
+
+      if (this.supportsPointer) {
+        canvas.addEventListener("pointerdown", (e) => this.handlePointerDown(e), { passive: false });
+        canvas.addEventListener("pointermove", (e) => this.handlePointerMove(e), { passive: false });
+        canvas.addEventListener("pointerup", (e) => this.handlePointerEnd(e), { passive: false });
+        canvas.addEventListener("pointercancel", (e) => this.handlePointerEnd(e), { passive: false });
+        canvas.addEventListener("lostpointercapture", (e) => this.handlePointerEnd(e), { passive: false });
+      } else {
+        canvas.addEventListener("touchstart", (e) => this.handleTouchStart(e), { passive: false });
+        canvas.addEventListener("touchmove", (e) => this.handleTouchMove(e), { passive: false });
+        canvas.addEventListener("touchend", (e) => this.handleTouchEnd(e), { passive: false });
+        canvas.addEventListener("touchcancel", (e) => this.handleTouchEnd(e), { passive: false });
+      }
 
       if (touchControls) {
         this.bindVirtualControls();
       }
-
       document.addEventListener("touchmove", (e) => {
         if (this.isMobile) e.preventDefault();
       }, { passive: false });
 
       document.addEventListener("touchend", (e) => {
+        if (!this.isMobile) return;
+
         const now = performance.now();
-        if (now - this.lastTouchEnd < 320) {
+        const isCanvasTouch = e.target === canvas;
+        if (isCanvasTouch && now - this.lastTouchEnd < 320) {
           e.preventDefault();
         }
+
         this.lastTouchEnd = now;
       }, { passive: false });
-
       document.addEventListener("gesturestart", (e) => {
         e.preventDefault();
       }, { passive: false });
@@ -638,6 +658,64 @@
 
       document.addEventListener("visibilitychange", () => {
         if (document.hidden && this.state === "running") this.pauseGame();
+      });
+    }
+
+    handleTouchStart(e) {
+      if (!e.changedTouches || e.changedTouches.length === 0) return;
+      e.preventDefault();
+
+      const touch = e.changedTouches[0];
+      this.handlePointerDown({
+        pointerId: touch.identifier,
+        pointerType: "touch",
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        preventDefault() {}
+      });
+    }
+
+    handleTouchMove(e) {
+      if (!this.pointer.active) return;
+
+      let activeTouch = null;
+      for (const touch of e.touches) {
+        if (touch.identifier === this.pointer.id) {
+          activeTouch = touch;
+          break;
+        }
+      }
+      if (!activeTouch) return;
+
+      e.preventDefault();
+      this.handlePointerMove({
+        pointerId: activeTouch.identifier,
+        pointerType: "touch",
+        clientX: activeTouch.clientX,
+        clientY: activeTouch.clientY,
+        preventDefault() {}
+      });
+    }
+
+    handleTouchEnd(e) {
+      if (!this.pointer.active || !e.changedTouches) return;
+
+      let endedTouch = null;
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === this.pointer.id) {
+          endedTouch = touch;
+          break;
+        }
+      }
+      if (!endedTouch) return;
+
+      e.preventDefault();
+      this.handlePointerEnd({
+        pointerId: endedTouch.identifier,
+        pointerType: "touch",
+        clientX: endedTouch.clientX,
+        clientY: endedTouch.clientY,
+        preventDefault() {}
       });
     }
 
@@ -788,38 +866,69 @@
         const control = button.dataset.control;
         if (!control || !(control in this.virtualInput)) continue;
 
-        button.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
+        if (this.supportsPointer) {
+          button.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
 
-          this.buttonPointers.set(event.pointerId, control);
-          this.setVirtualDirection(control, true);
-          button.classList.add("active");
+            this.buttonPointers.set(event.pointerId, control);
+            this.setVirtualDirection(control, true);
+            button.classList.add("active");
 
-          if (this.state === "intro" || this.state === "gameover") {
-            this.startGame();
-          } else if (this.state === "paused") {
-            this.resumeGame();
-          }
+            if (this.state === "intro" || this.state === "gameover") {
+              this.startGame();
+            } else if (this.state === "paused") {
+              this.resumeGame();
+            }
 
-          try {
-            button.setPointerCapture(event.pointerId);
-          } catch {
-            // ignore capture errors
-          }
-        }, { passive: false });
+            try {
+              button.setPointerCapture(event.pointerId);
+            } catch {
+              // ignore capture errors
+            }
+          }, { passive: false });
 
-        button.addEventListener("pointerup", releaseFromEvent, { passive: false });
-        button.addEventListener("pointercancel", releaseFromEvent, { passive: false });
-        button.addEventListener("lostpointercapture", releaseFromEvent, { passive: false });
+          button.addEventListener("pointerup", releaseFromEvent, { passive: false });
+          button.addEventListener("pointercancel", releaseFromEvent, { passive: false });
+          button.addEventListener("lostpointercapture", releaseFromEvent, { passive: false });
+        } else {
+          const releaseTouch = (event) => {
+            event.preventDefault();
+            this.virtualPressCount[control] = 0;
+            this.virtualInput[control] = false;
+            button.classList.remove("active");
+          };
+
+          button.addEventListener("touchstart", (event) => {
+            event.preventDefault();
+            this.virtualPressCount[control] = 1;
+            this.virtualInput[control] = true;
+            button.classList.add("active");
+
+            if (this.state === "intro" || this.state === "gameover") {
+              this.startGame();
+            } else if (this.state === "paused") {
+              this.resumeGame();
+            }
+          }, { passive: false });
+
+          button.addEventListener("touchend", releaseTouch, { passive: false });
+          button.addEventListener("touchcancel", releaseTouch, { passive: false });
+        }
       }
 
       if (pauseTouchBtn) {
-        pauseTouchBtn.addEventListener("pointerdown", (event) => {
+        const togglePause = (event) => {
           event.preventDefault();
           if (this.state === "running") this.pauseGame();
           else if (this.state === "paused") this.resumeGame();
           else if (this.state === "intro" || this.state === "gameover") this.startGame();
-        }, { passive: false });
+        };
+
+        if (this.supportsPointer) {
+          pauseTouchBtn.addEventListener("pointerdown", togglePause, { passive: false });
+        } else {
+          pauseTouchBtn.addEventListener("touchstart", togglePause, { passive: false });
+        }
       }
     }
 
