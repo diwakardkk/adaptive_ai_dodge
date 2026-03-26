@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#06050c" />
-  <meta name="description" content="Adaptive AI Dodge — a premium neon canvas game with adaptive obstacle spawning, touch drag controls, and vibration feedback." />
+  <meta name="description" content="Adaptive AI Dodge - a premium neon canvas game with adaptive obstacle spawning, touch drag controls, and vibration feedback." />
   <title>Adaptive AI Dodge</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -34,7 +34,7 @@
           <button id="startBtn" class="primary-btn">Start Game</button>
         </div>
 
-        <p id="controlHint" class="hint">Arrow keys to move • P or Space to pause</p>
+        <p id="controlHint" class="hint">Arrow keys to move | P or Space to pause</p>
       </div>
     </div>
 
@@ -64,8 +64,22 @@
 
     <div id="pauseScreen" class="pause-badge">Paused</div>
     <div id="deviceHint" class="device-hint">Arrow keys / WASD to move</div>
+
+    <div id="touchControls" class="touch-controls" aria-label="Touch controls">
+      <div class="touch-controls__group touch-controls__group--left">
+        <button class="control-btn" data-control="left" aria-label="Move left">Left</button>
+        <button class="control-btn" data-control="right" aria-label="Move right">Right</button>
+      </div>
+
+      <div class="touch-controls__group touch-controls__group--right">
+        <button class="control-btn" data-control="up" aria-label="Move up">Up</button>
+        <button class="control-btn" data-control="down" aria-label="Move down">Down</button>
+        <button id="pauseTouchBtn" class="control-btn control-btn--action" aria-label="Pause or resume game">Pause</button>
+      </div>
+    </div>
   </div>
 
   <script src="script.js"></script>
 </body>
 </html>
+

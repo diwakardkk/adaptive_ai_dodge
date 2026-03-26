@@ -8,7 +8,9 @@
   const finalBest = document.getElementById("finalBest");
   const controlHint = document.getElementById("controlHint");
   const deviceHint = document.getElementById("deviceHint");
-
+  const touchControls = document.getElementById("touchControls");
+  const pauseTouchBtn = document.getElementById("pauseTouchBtn");
+  const controlButtons = Array.from(document.querySelectorAll(".control-btn[data-control]"));
   const startScreen = document.getElementById("startScreen");
   const gameOverScreen = document.getElementById("gameOverScreen");
   const pauseScreen = document.getElementById("pauseScreen");
@@ -394,6 +396,7 @@
 
       this.audioCtx = null;
       this.isTouchDevice = this.detectTouchDevice();
+      this.isMobile = this.detectMobileDevice();
 
       this.pointer = {
         active: false,
@@ -402,6 +405,41 @@
         y: 0
       };
 
+      this.virtualInput = {
+        left: false,
+        right: false,
+        up: false,
+        down: false
+      };
+
+      this.virtualPressCount = {
+        left: 0,
+        right: 0,
+        up: 0,
+        down: 0
+      };
+
+      this.buttonPointers = new Map();
+
+      this.swipeInput = {
+        x: 0,
+        y: 0,
+        timeLeft: 0,
+        duration: 0.18
+      };
+
+      this.swipeGesture = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        lastX: 0,
+        lastY: 0,
+        startTime: 0
+      };
+
+      this.resizeQueued = false;
+      this.lastTouchEnd = 0;
       this.createStars(this.computeStarCount());
       this.resize();
       this.bindEvents();
@@ -420,11 +458,24 @@
       );
     }
 
-    computeStarCount() {
-      const area = window.innerWidth * window.innerHeight;
-      return clamp(Math.round(area / 13000), 70, this.detectTouchDevice() ? 120 : 160);
+    detectMobileDevice() {
+      const shortEdge = Math.min(window.innerWidth, window.innerHeight);
+      return this.detectTouchDevice() || shortEdge <= 900;
     }
 
+    queueResize() {
+      if (this.resizeQueued) return;
+      this.resizeQueued = true;
+      requestAnimationFrame(() => {
+        this.resizeQueued = false;
+        this.resize();
+      });
+    }
+
+    computeStarCount() {
+      const area = window.innerWidth * window.innerHeight;
+      return clamp(Math.round(area / 13000), 70, this.isMobile ? 112 : 160);
+    }
     loadBestScore() {
       try {
         return Number(localStorage.getItem(STORAGE_KEY)) || 0;
@@ -453,19 +504,26 @@
     }
 
     applyDeviceUI() {
-      document.body.classList.toggle("touch-device", this.isTouchDevice);
+      document.body.classList.toggle("touch-device", this.isMobile);
+      if (touchControls) {
+        touchControls.setAttribute("aria-hidden", this.isMobile ? "false" : "true");
+      }
 
-      if (this.isTouchDevice) {
-        controlHint.textContent = "Touch & drag anywhere to steer • P or Space to pause";
-        deviceHint.textContent = "Touch and drag to move";
+      if (this.isMobile) {
+        controlHint.textContent = "Touch drag, swipe, or hold buttons to move | Tap Pause to pause";
+        deviceHint.textContent = "Touch drag, swipe, or hold buttons to move";
       } else {
-        controlHint.textContent = "Arrow keys or WASD to move • P or Space to pause";
+        controlHint.textContent = "Arrow keys or WASD to move | P or Space to pause";
         deviceHint.textContent = "Arrow keys / WASD to move";
       }
     }
 
     resize() {
-      this.dpr = window.devicePixelRatio || 1;
+      this.isTouchDevice = this.detectTouchDevice();
+      this.isMobile = this.detectMobileDevice();
+
+      const maxDpr = this.isMobile ? 2 : 2.5;
+      this.dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       this.width = window.innerWidth;
       this.height = window.innerHeight;
 
@@ -482,6 +540,7 @@
       }
 
       this.createStars(this.computeStarCount());
+      this.applyDeviceUI();
     }
 
     resetScene() {
@@ -501,12 +560,20 @@
 
       this.pointer.active = false;
       this.pointer.id = null;
+      this.swipeInput.timeLeft = 0;
+      this.swipeGesture.active = false;
+      this.swipeGesture.pointerId = null;
+      this.releaseAllVirtualDirections();
 
       this.updateHUD();
     }
 
     bindEvents() {
-      window.addEventListener("resize", () => this.resize());
+      window.addEventListener("resize", () => this.queueResize(), { passive: true });
+      window.addEventListener("orientationchange", () => this.queueResize(), { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => this.queueResize(), { passive: true });
+      }
 
       window.addEventListener("keydown", (e) => {
         const keysOfInterest = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "a", "A", "d", "D", "w", "W", "s", "S", " ", "p", "P", "Enter", "Escape"];
@@ -542,7 +609,30 @@
       canvas.addEventListener("pointercancel", (e) => this.handlePointerEnd(e), { passive: false });
       canvas.addEventListener("lostpointercapture", (e) => this.handlePointerEnd(e), { passive: false });
 
+      if (touchControls) {
+        this.bindVirtualControls();
+      }
+
+      document.addEventListener("touchmove", (e) => {
+        if (this.isMobile) e.preventDefault();
+      }, { passive: false });
+
+      document.addEventListener("touchend", (e) => {
+        const now = performance.now();
+        if (now - this.lastTouchEnd < 320) {
+          e.preventDefault();
+        }
+        this.lastTouchEnd = now;
+      }, { passive: false });
+
+      document.addEventListener("gesturestart", (e) => {
+        e.preventDefault();
+      }, { passive: false });
+
       window.addEventListener("blur", () => {
+        this.pointer.active = false;
+        this.pointer.id = null;
+        this.releaseAllVirtualDirections();
         if (this.state === "running") this.pauseGame();
       });
 
@@ -563,6 +653,7 @@
       this.pointer.active = true;
       this.pointer.id = e.pointerId;
       this.updatePointerFromEvent(e);
+      this.startSwipeTracking(e);
 
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -575,19 +666,180 @@
       if (!this.pointer.active || this.pointer.id !== e.pointerId) return;
       e.preventDefault();
       this.updatePointerFromEvent(e);
+      this.trackSwipeGesture(e);
     }
 
     handlePointerEnd(e) {
       if (this.pointer.id !== e.pointerId) return;
       e.preventDefault();
+      this.finishSwipeTracking(e);
       this.pointer.active = false;
       this.pointer.id = null;
     }
 
-    updatePointerFromEvent(e) {
+    getCanvasPointFromEvent(e) {
       const rect = canvas.getBoundingClientRect();
-      this.pointer.x = clamp(e.clientX - rect.left, 0, this.width);
-      this.pointer.y = clamp(e.clientY - rect.top, 0, this.height);
+      return {
+        x: clamp(e.clientX - rect.left, 0, this.width),
+        y: clamp(e.clientY - rect.top, 0, this.height)
+      };
+    }
+
+    updatePointerFromEvent(e) {
+      const point = this.getCanvasPointFromEvent(e);
+      this.pointer.x = point.x;
+      this.pointer.y = point.y;
+    }
+
+    startSwipeTracking(e) {
+      if (e.pointerType !== "touch") return;
+      const point = this.getCanvasPointFromEvent(e);
+
+      this.swipeGesture.active = true;
+      this.swipeGesture.pointerId = e.pointerId;
+      this.swipeGesture.startX = point.x;
+      this.swipeGesture.startY = point.y;
+      this.swipeGesture.lastX = point.x;
+      this.swipeGesture.lastY = point.y;
+      this.swipeGesture.startTime = performance.now();
+    }
+
+    trackSwipeGesture(e) {
+      if (!this.swipeGesture.active || this.swipeGesture.pointerId !== e.pointerId) return;
+      const point = this.getCanvasPointFromEvent(e);
+      this.swipeGesture.lastX = point.x;
+      this.swipeGesture.lastY = point.y;
+    }
+
+    finishSwipeTracking(e) {
+      if (!this.swipeGesture.active || this.swipeGesture.pointerId !== e.pointerId) return;
+
+      const elapsed = performance.now() - this.swipeGesture.startTime;
+      const dx = this.swipeGesture.lastX - this.swipeGesture.startX;
+      const dy = this.swipeGesture.lastY - this.swipeGesture.startY;
+      const dist = Math.hypot(dx, dy);
+
+      // Short, quick gestures add a brief directional impulse for swipe movement.
+      if (dist >= 34 && elapsed <= 320) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const speed = dist / Math.max(elapsed, 1);
+        const strength = clamp(speed / 1.4, 0.45, 1);
+
+        this.swipeInput.x = nx * strength;
+        this.swipeInput.y = ny * strength;
+        this.swipeInput.timeLeft = this.swipeInput.duration;
+      }
+
+      this.swipeGesture.active = false;
+      this.swipeGesture.pointerId = null;
+    }
+
+    setVirtualDirection(control, pressed) {
+      if (!(control in this.virtualInput)) return;
+
+      if (pressed) {
+        this.virtualPressCount[control] += 1;
+      } else {
+        this.virtualPressCount[control] = Math.max(0, this.virtualPressCount[control] - 1);
+      }
+
+      this.virtualInput[control] = this.virtualPressCount[control] > 0;
+    }
+
+    releaseVirtualPointer(pointerId) {
+      const control = this.buttonPointers.get(pointerId);
+      if (!control) return;
+
+      this.buttonPointers.delete(pointerId);
+      this.setVirtualDirection(control, false);
+
+      if (this.virtualPressCount[control] === 0) {
+        const button = touchControls ? touchControls.querySelector(`[data-control="${control}"]`) : null;
+        if (button) button.classList.remove("active");
+      }
+    }
+
+    releaseAllVirtualDirections() {
+      this.virtualInput.left = false;
+      this.virtualInput.right = false;
+      this.virtualInput.up = false;
+      this.virtualInput.down = false;
+
+      this.virtualPressCount.left = 0;
+      this.virtualPressCount.right = 0;
+      this.virtualPressCount.up = 0;
+      this.virtualPressCount.down = 0;
+
+      this.buttonPointers.clear();
+      for (const button of controlButtons) {
+        button.classList.remove("active");
+      }
+    }
+
+    bindVirtualControls() {
+      // Keep button logic isolated so mobile touch input remains modular.
+      const releaseFromEvent = (event) => {
+        event.preventDefault();
+        this.releaseVirtualPointer(event.pointerId);
+      };
+
+      for (const button of controlButtons) {
+        const control = button.dataset.control;
+        if (!control || !(control in this.virtualInput)) continue;
+
+        button.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+
+          this.buttonPointers.set(event.pointerId, control);
+          this.setVirtualDirection(control, true);
+          button.classList.add("active");
+
+          if (this.state === "intro" || this.state === "gameover") {
+            this.startGame();
+          } else if (this.state === "paused") {
+            this.resumeGame();
+          }
+
+          try {
+            button.setPointerCapture(event.pointerId);
+          } catch {
+            // ignore capture errors
+          }
+        }, { passive: false });
+
+        button.addEventListener("pointerup", releaseFromEvent, { passive: false });
+        button.addEventListener("pointercancel", releaseFromEvent, { passive: false });
+        button.addEventListener("lostpointercapture", releaseFromEvent, { passive: false });
+      }
+
+      if (pauseTouchBtn) {
+        pauseTouchBtn.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          if (this.state === "running") this.pauseGame();
+          else if (this.state === "paused") this.resumeGame();
+          else if (this.state === "intro" || this.state === "gameover") this.startGame();
+        }, { passive: false });
+      }
+    }
+
+    getMovementInput(dt) {
+      const left = this.keys.ArrowLeft || this.keys.KeyA || this.virtualInput.left;
+      const right = this.keys.ArrowRight || this.keys.KeyD || this.virtualInput.right;
+      const up = this.keys.ArrowUp || this.keys.KeyW || this.virtualInput.up;
+      const down = this.keys.ArrowDown || this.keys.KeyS || this.virtualInput.down;
+
+      let x = (right ? 1 : 0) - (left ? 1 : 0);
+      let y = (down ? 1 : 0) - (up ? 1 : 0);
+
+      if (this.swipeInput.timeLeft > 0) {
+        this.swipeInput.timeLeft = Math.max(0, this.swipeInput.timeLeft - dt);
+        const blend = this.swipeInput.timeLeft / this.swipeInput.duration;
+        x = clamp(x + this.swipeInput.x * blend, -1, 1);
+        y = clamp(y + this.swipeInput.y * blend, -1, 1);
+      }
+
+      return { x, y };
     }
 
     initAudio() {
@@ -788,9 +1040,9 @@
         this.score += dt;
         this.updateHUD();
 
-        const inputX = (this.keys.ArrowRight || this.keys.KeyD ? 1 : 0) - (this.keys.ArrowLeft || this.keys.KeyA ? 1 : 0);
-        const inputY = (this.keys.ArrowDown || this.keys.KeyS ? 1 : 0) - (this.keys.ArrowUp || this.keys.KeyW ? 1 : 0);
-
+        const movementInput = this.getMovementInput(dt);
+        const inputX = movementInput.x;
+        const inputY = movementInput.y;
         const decay = Math.exp(-0.32 * dt);
         this.stats.left *= decay;
         this.stats.right *= decay;
@@ -802,9 +1054,10 @@
         if (inputY < 0) this.stats.up += dt * 1.7;
         if (inputY > 0) this.stats.down += dt * 1.7;
 
-        const touchTarget = this.pointer.active ? { x: this.pointer.x, y: this.pointer.y } : null;
+        const hasVirtualHold = this.virtualInput.left || this.virtualInput.right || this.virtualInput.up || this.virtualInput.down;
+        const hasAxisInput = Math.abs(inputX) > 0.001 || Math.abs(inputY) > 0.001;
+        const touchTarget = this.pointer.active && !hasVirtualHold && !hasAxisInput ? { x: this.pointer.x, y: this.pointer.y } : null;
         this.player.update(dt, inputX, inputY, touchTarget);
-
         const difficulty = 1 + this.score * 0.16;
         const targetInterval = clamp(0.95 - this.score * 0.012, 0.24, 0.95);
 

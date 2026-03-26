@@ -1,4 +1,4 @@
-/* Adaptive AI Dodge — premium responsive mobile-ready styling */
+/* Adaptive AI Dodge - premium responsive mobile-ready styling */
 
 :root {
   --bg-1: #05050b;
@@ -296,9 +296,101 @@ body::before {
 
 .touch-device .device-hint {
   opacity: 0.96;
+  bottom: calc(112px + env(safe-area-inset-bottom));
+}
+
+.touch-controls {
+  position: absolute;
+  left: calc(12px + env(safe-area-inset-left));
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: none;
+  z-index: 18;
+}
+
+.touch-device .touch-controls {
+  display: flex;
+}
+
+.touch-controls__group {
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.touch-controls__group--right {
+  max-width: 52vw;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.control-btn {
+  appearance: none;
+  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(12, 14, 28, 0.46);
+  color: rgba(245, 248, 255, 0.98);
+  min-width: 74px;
+  min-height: 52px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.control-btn:active,
+.control-btn.active {
+  transform: translateY(1px) scale(0.98);
+  background: rgba(109, 125, 255, 0.42);
+  border-color: rgba(160, 190, 255, 0.88);
+}
+
+.control-btn--action {
+  min-width: 94px;
+  background: rgba(255, 89, 120, 0.34);
 }
 
 @media (max-width: 680px) {
+  .touch-device .device-hint {
+    bottom: calc(98px + env(safe-area-inset-bottom));
+  }
+
+  .touch-controls {
+    left: calc(10px + env(safe-area-inset-left));
+    right: calc(10px + env(safe-area-inset-right));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .touch-controls__group {
+    gap: 8px;
+  }
+
+  .touch-controls__group--right {
+    max-width: 56vw;
+  }
+
+  .control-btn {
+    min-width: 64px;
+    min-height: 46px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+  }
+
   .hud {
     top: calc(12px + env(safe-area-inset-top));
     left: calc(12px + env(safe-area-inset-left));
@@ -332,6 +424,10 @@ body::before {
 }
 
 @media (pointer: coarse) {
+  .touch-controls {
+    display: flex;
+  }
+
   .primary-btn {
     min-height: 56px;
     min-width: 180px;
@@ -339,5 +435,11 @@ body::before {
 
   .hint {
     font-size: 13px;
+  }
+}
+
+@media (pointer: fine) {
+  .touch-controls {
+    display: none !important;
   }
 }
